@@ -1,0 +1,5 @@
+whisperwise.config.json
+queue/
+failed/
+pending/
+*.log
