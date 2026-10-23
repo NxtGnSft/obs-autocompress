@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+extract-audio — extract audio losslessly from a video to M4A
+
+Usage:
+  extract-audio [--force] [<input>]
+  extract-audio --help
+
+Options:
+  -f, --force   Overwrite existing output file.
+  -h, --help    Show this help.
+
+With no <input>, picks the most recently modified .mkv/.mp4 in ~/Movies/.
+
+Audio is stream-copied (-c:a copy), so output is bit-identical to the
+source track. Requires an M4A-compatible audio codec (e.g. AAC).
+
+Output: <input-stem>.m4a (same directory as input).
+EOF
+}
+
+die() {
+  echo "extract-audio: $*" >&2
+  exit 1
+}
+
+force=0
+input=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -f|--force)
+      force=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      die "unknown flag: $1"
+      ;;
+    *)
+      [[ -z "$input" ]] || die "only one input file allowed (got '$input' and '$1')"
+      input="$1"
+      shift
+      ;;
+  esac
+done
+
+command -v ffmpeg >/dev/null 2>&1 \
+  || die "ffmpeg not found. Install with: brew install ffmpeg"
+
+if [[ -z "$input" ]]; then
+  input="$(ls -t "$HOME/Movies"/*.mkv "$HOME/Movies"/*.mp4 2>/dev/null | head -n 1)"
+  [[ -n "$input" ]] || die "no .mkv/.mp4 files found in ~/Movies/"
+  echo "extract-audio: latest video: $input"
+fi
+
+[[ -f "$input" ]] || die "input file not found: $input"
+
+output="${input%.*}.m4a"
+
+if [[ -e "$output" && "$force" -ne 1 ]]; then
+  die "output exists: $output
+  (input: $input)
+  Use --force to overwrite."
+fi
+
+success=0
+trap '[[ $success -eq 1 ]] || rm -f "$output"' EXIT
+
+ffmpeg -hide_banner -loglevel warning -stats -y -i "$input" -vn -c:a copy "$output"
+
+success=1
+echo "done: $output"

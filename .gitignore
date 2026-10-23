@@ -3,3 +3,4 @@ queue/
 failed/
 pending/
 *.log
+.lock/

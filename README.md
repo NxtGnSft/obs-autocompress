@@ -44,3 +44,17 @@ powershell -ExecutionPolicy Bypass -File "C:\Slava Dev\obs-autocompress\compress
 2. Скопировать `whisperwise.config.example.json` в `whisperwise.config.json` и вписать свой токен (ww.nextgensoft.co/account.html). Файл в git не попадает.
 3. Создать пустые папки `queue`, `failed`, `pending` (скрипты создают их сами при первом запуске, кроме `queue` для Lua — создать вручную).
 4. Подключить `obs-autocompress.lua` в OBS (Сервис → Скрипты).
+
+## macOS
+На маке видео не пережимается: OBS пишет MKV (переживает краш), а для Whisperwise нужно только аудио.
+После остановки записи `worker.sh` извлекает звук через `extract-audio` из этой папки (копия AAC-дорожки без перекодирования, секунды)
+в `.m4a` рядом с записью и спрашивает про отправку. Час встречи ≈ 85 МБ (лимит сервера 500 МБ, видео целиком не пролезает).
+
+Первая настройка:
+1. `brew install ffmpeg` (PATH не важен, скрипт добавляет `/opt/homebrew/bin` сам).
+2. Токен в Keychain (не в файл): `security add-generic-password -U -s whisperwise -a "$USER" -w 'ТОКЕН'`.
+3. OBS → Tools → Scripts → «+» → `obs-autocompress.lua`.
+
+- Вопрос висит, пока не ответишь (Esc не закрывает), раз в минуту пищит и всплывает снова. Неотвеченное остаётся в `queue/` и спросится после перезагрузки при следующем запуске.
+- `worker.log` — что извлечено / отправлено / ошибки. `failed/` — не извлеклось; повторить: `mv failed/*.txt queue/ && ./worker.sh`.
+- Вручную: `./worker.sh ~/Movies/запись.mkv` (без аргументов — разобрать очередь).
