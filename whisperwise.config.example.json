@@ -1,4 +1,5 @@
 {
   "baseUrl": "https://ww.nextgensoft.co",
-  "token": "PASTE_TOKEN_FROM_ww.nextgensoft.co/account.html"
+  "token": "PASTE_TOKEN_FROM_ww.nextgensoft.co/account.html",
+  "lang": "en"
 }

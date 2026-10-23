@@ -44,8 +44,8 @@ local function on_event(event)
 end
 
 function script_description()
-    return "После остановки записи: Windows — сжимает через HandBrakeCLI (Видео\\compressed, compress.log);\n" ..
-           "macOS — извлекает аудио в .m4a рядом с записью (worker.log). Затем спрашивает про отправку в Whisperwise."
+    return "After a recording stops: Windows compresses it with HandBrakeCLI (Videos\\compressed, compress.log);\n" ..
+           "macOS extracts audio to .m4a next to the recording (worker.log). Then asks whether to send it to Whisperwise."
 end
 
 function script_load(settings)

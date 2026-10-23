@@ -5,7 +5,7 @@
 When an OBS recording stops, `obs-autocompress.lua` queues the file (`queue/`) and starts a background worker,
 which then asks whether to send the recording to Whisperwise (ww.nextgensoft.co). The original stays where it is.
 
-Note: the prompts and messages in the scripts are in Russian; button names below are translated.
+Prompts are in English by default; set `"lang": "ru"` in `whisperwise.config.json` for Russian (logs are always English).
 
 | | Windows | macOS |
 |---|---|---|
@@ -69,6 +69,7 @@ First-time setup:
    AAC audio codec (otherwise `extract-audio` can't copy the track into `.m4a`).
 3. Token (created at ww.nextgensoft.co/account.html, revoked there too) goes into Keychain, not a file:
    `security add-generic-password -U -s whisperwise -a "$USER" -w 'TOKEN'`.
+   Optional: for Russian prompts, create `whisperwise.config.json` with `{"lang": "ru"}` (no token needed in it).
 4. OBS → Tools → Scripts → "+" → `obs-autocompress.lua`.
 
 What it looks like:

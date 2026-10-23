@@ -12,20 +12,37 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 QUEUE="$ROOT/queue"; FAILED="$ROOT/failed"; LOG="$ROOT/worker.log"; LOCK="$ROOT/.lock"
 mkdir -p "$QUEUE" "$FAILED"
 
+# UI language: "lang" in whisperwise.config.json (optional on macOS; the token lives in Keychain).
+if [[ $(jq -r '.lang // empty' "$ROOT/whisperwise.config.json" 2>/dev/null) == ru ]]; then
+    T_SEND="Отправить"; T_KEEP="Нет, оставить себе"
+    T_NO_TOKEN="Нет токена в Keychain (см. README, раздел macOS)."
+    T_NO_PROJECTS="Не удалось получить проекты Whisperwise (токен? сеть?)."
+    T_RECORDING="Запись"; T_MB="МБ"; T_ASK="Отправить в Whisperwise? Проект — на следующем шаге."; T_TITLE="Название:"
+    T_PROJECT_FOR="Проект для"; T_SENT="Отправлено:"; T_UPLOAD_ERR="Ошибка отправки:"
+    T_EXTRACT_FAILED="Извлечение аудио не удалось"; T_SEE_LOG="см. worker.log"
+else
+    T_SEND="Send"; T_KEEP="No, keep it"
+    T_NO_TOKEN="No token in Keychain (see README, macOS section)."
+    T_NO_PROJECTS="Could not fetch Whisperwise projects (token? network?)."
+    T_RECORDING="Recording"; T_MB="MB"; T_ASK="Send to Whisperwise? You pick the project next."; T_TITLE="Title:"
+    T_PROJECT_FOR="Project for"; T_SENT="Sent:"; T_UPLOAD_ERR="Upload failed:"
+    T_EXTRACT_FAILED="Audio extraction failed"; T_SEE_LOG="see worker.log"
+fi
+
 log() { echo "$(date '+%F %T')  $*" >> "$LOG"; }
 notify() { osascript -e 'on run a' -e 'display notification (item 2 of a) with title (item 1 of a)' -e 'end run' "$1" "$2"; }
 
 # Ask about one file. Prints "send<TAB>title", "no", or "again" (left unanswered for a minute: re-ask, beep).
 # No Cancel button, so Esc does nothing: only an explicit answer closes it.
 ask() {
-    osascript - "$1" "$2" <<'EOF'
+    osascript - "$1" "$2" "$T_KEEP" "$T_SEND" <<'EOF'
 on run a
     activate
     beep
     set r to display dialog (item 1 of a) default answer (item 2 of a) with title "Whisperwise" ¬
-        buttons {"Нет, оставить себе", "Отправить"} default button "Отправить" giving up after 60
+        buttons {item 3 of a, item 4 of a} default button (item 4 of a) giving up after 60
     if gave up of r then return "again"
-    if button returned of r is "Отправить" then return "send" & tab & (text returned of r)
+    if button returned of r is (item 4 of a) then return "send" & tab & (text returned of r)
     return "no"
 end run
 EOF
@@ -60,14 +77,14 @@ ask_upload() {
         if [[ -z $list ]]; then   # (re)fetch until it works; a broken token/network must not fail silently
             err=""
             token=$(security find-generic-password -s whisperwise -w 2>/dev/null) \
-                || err="Нет токена в Keychain (см. README, раздел macOS)."
+                || err=$T_NO_TOKEN
             [[ -z $err ]] && { list=$(projects "$token") && [[ -n $list ]] \
-                || err="Не удалось получить проекты Whisperwise (токен? сеть?)."; }
+                || err=$T_NO_PROJECTS; }
         fi
-        ans=$(ask "${err:+$err$'\n\n'}Запись: $(basename "$file") ($mb МБ). Отправить в Whisperwise? Проект — на следующем шаге."$'\n\n'"Название:" "$title")
+        ans=$(ask "${err:+${err}$'\n\n'}${T_RECORDING}: $(basename "$file") (${mb} ${T_MB}). ${T_ASK}"$'\n\n'"${T_TITLE}" "$title")
         case $ans in
             again) continue ;;
-            no) log "не отправлять (выбор): $file"; return ;;
+            no) log "declined: $file"; return ;;
         esac
         title=${ans#send$'\t'}
         [[ -n $list ]] || continue
@@ -76,22 +93,22 @@ ask_upload() {
             pid=$(cut -f2 <<<"$list")
         else
             names=(); while IFS=$'\t' read -r name _; do names+=("$name"); done <<<"$list"
-            name=$(choose "Проект для «${title}»:" "${names[@]}")
+            name=$(choose "${T_PROJECT_FOR} «${title}»:" "${names[@]}")
             [[ -n $name ]] || continue   # Cancel: back to the first question
             pid=$(awk -F'\t' -v n="$name" '$1 == n { print $2; exit }' <<<"$list")
         fi
 
         resp=$(curl -sS -m 3600 -H "Authorization: Bearer $token" -F "audio=@\"$file\";type=audio/mp4" \
             --form-string "external_project_id=$pid" --form-string "title=$title" "$BASE_URL/upload" 2>&1)
-        log "ответ сервера: ${resp:0:300}"
+        log "server response: ${resp:0:300}"
         url=$(jq -r '.shareUrl // empty' <<<"$resp" 2>/dev/null)
         if [[ -n $url ]]; then
-            log "отправлено: $file -> $url"
-            notify Whisperwise "Отправлено: $url"
+            log "sent: $file -> $url"
+            notify Whisperwise "${T_SENT} ${url}"
             return
         fi
-        err="Ошибка отправки: $(jq -r '"\(.error) \(.message // "")"' <<<"$resp" 2>/dev/null || echo "${resp:0:200}")"
-        log "ОШИБКА отправки $file: $err"
+        err="${T_UPLOAD_ERR} $(jq -r '"\(.error) \(.message // "")"' <<<"$resp" 2>/dev/null || echo "${resp:0:200}")"
+        log "ERROR uploading $file: $err"
     done
 }
 
@@ -109,8 +126,8 @@ wait_stable() {
 process() {
     local src=$1 m4a="${1%.*}.m4a" out
     if [[ ! -f $m4a ]]; then
-        [[ -f $src ]] || { log "FAIL  $src : файла нет"; return 1; }
-        wait_stable "$src" || { log "FAIL  $src : файл не перестал расти за 60 мин"; return 1; }
+        [[ -f $src ]] || { log "FAIL  $src : file not found"; return 1; }
+        wait_stable "$src" || { log "FAIL  $src : file still growing after 60 min"; return 1; }
         log "extract $src"
         out=$("$ROOT/extract-audio" "$src" 2>&1) || { log "FAIL  $src : $out"; return 1; }
     fi
@@ -119,7 +136,7 @@ process() {
 
 # Manual run: queue the given files.
 for f in "$@"; do
-    [[ -f $f ]] || { echo "нет файла: $f" >&2; continue; }
+    [[ -f $f ]] || { echo "no such file: $f" >&2; continue; }
     printf '%s' "$(cd "$(dirname "$f")" && pwd)/$(basename "$f")" > "$QUEUE/$(date +%Y%m%d-%H%M%S)-$RANDOM.txt"
 done
 
@@ -138,6 +155,6 @@ while q=$(ls "$QUEUE"/*.txt 2>/dev/null | head -1); [[ -n $q ]]; do
         rm -f "$q"
     else
         mv "$q" "$FAILED/"
-        notify 'Извлечение аудио не удалось' "$(basename "$src"), см. worker.log"
+        notify "$T_EXTRACT_FAILED" "$(basename "$src"), ${T_SEE_LOG}"
     fi
 done

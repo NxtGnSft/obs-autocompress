@@ -5,6 +5,8 @@
 После остановки записи в OBS `obs-autocompress.lua` ставит файл в очередь (`queue/`) и запускает фоновый обработчик,
 который потом спрашивает, отправить ли запись в Whisperwise (ww.nextgensoft.co). Оригинал остаётся на месте.
 
+Окна по умолчанию на английском; для русского — `"lang": "ru"` в `whisperwise.config.json` (логи всегда на английском).
+
 | | Windows | macOS |
 |---|---|---|
 | Обработчик | `compress.ps1` + `ask-upload.ps1` | `worker.sh` |
@@ -67,6 +69,7 @@ powershell -ExecutionPolicy Bypass -File compress.ps1 "$HOME\Videos\запись
    аудиокодек AAC (иначе `extract-audio` не сможет скопировать дорожку в `.m4a`).
 3. Токен (создаётся на ww.nextgensoft.co/account.html, там же отзывается) — в Keychain, не в файл:
    `security add-generic-password -U -s whisperwise -a "$USER" -w 'ТОКЕН'`.
+   Для русских окон создать `whisperwise.config.json` с `{"lang": "ru"}` (токен в нём не нужен).
 4. OBS → Tools → Scripts → «+» → `obs-autocompress.lua`.
 
 Как это выглядит:

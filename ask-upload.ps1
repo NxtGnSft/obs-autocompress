@@ -11,6 +11,16 @@ $LogFile    = Join-Path $Root 'upload.log'
 $ConfigFile = Join-Path $Root 'whisperwise.config.json'
 New-Item -ItemType Directory -Force $PendingDir | Out-Null
 
+$Lang = try { (Get-Content $ConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json).lang } catch { $null }
+$T = @{
+    en = @{ Title = 'Whisperwise: send recording?'; Compressed = 'Recording compressed: {0} ({1:N1} MB).'
+            Project = 'Project:'; Name = 'Title:'; Send = 'Send'; Keep = 'No, keep it'
+            PickProject = 'Choose a project.'; NoProjects = 'Could not fetch projects: '; Sent = 'Sent: ' }
+    ru = @{ Title = 'Whisperwise: отправить запись?'; Compressed = 'Запись сжата: {0} ({1:N1} МБ).'
+            Project = 'Проект:'; Name = 'Название:'; Send = 'Отправить'; Keep = 'Нет, оставить себе'
+            PickProject = 'Выберите проект.'; NoProjects = 'Не удалось получить проекты: '; Sent = 'Отправлено: ' }
+}[$(if ($Lang -eq 'ru') { 'ru' } else { 'en' })]
+
 function Log($msg) {
     Add-Content -Path $LogFile -Value ('{0:yyyy-MM-dd HH:mm:ss}  {1}' -f (Get-Date), $msg) -Encoding UTF8
 }
@@ -26,9 +36,9 @@ try { [void]$mutex.WaitOne() } catch [Threading.AbandonedMutexException] { }
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing, System.Net.Http
 
 function Read-Config {
-    if (-not (Test-Path $ConfigFile)) { throw "нет $ConfigFile" }
+    if (-not (Test-Path $ConfigFile)) { throw "missing $ConfigFile" }
     $c = Get-Content $ConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json
-    if (-not $c.token) { throw 'в whisperwise.config.json не заполнен token' }
+    if (-not $c.token) { throw 'token is empty in whisperwise.config.json' }
     return $c
 }
 
@@ -45,13 +55,13 @@ function Get-Projects($cfg) {
     try {
         $r = $cl.GetAsync("$($cfg.baseUrl)/api/projects").Result
         $body = [Text.Encoding]::UTF8.GetString($r.Content.ReadAsByteArrayAsync().Result)   # server sends no charset
-        if (-not $r.IsSuccessStatusCode) { throw "проекты: HTTP $([int]$r.StatusCode) $body" }
+        if (-not $r.IsSuccessStatusCode) { throw "projects: HTTP $([int]$r.StatusCode) $body" }
         $j = $body | ConvertFrom-Json
         # shape: { teams: [ { name, projects: [ { id, name, state } ] } ] }
         $multi = @($j.teams).Count -gt 1
         $list = foreach ($t in $j.teams) { foreach ($p in $t.projects) {
             [pscustomobject]@{ id = $p.id; name = $(if ($multi) { "$($t.name) / $($p.name.Trim())" } else { $p.name.Trim() }) } } }
-        if (-not $list) { throw 'в Whisperwise нет доступных вам проектов' }
+        if (-not $list) { throw 'no Whisperwise projects available to you' }
         return @($list | Sort-Object name)
     } finally { $cl.Dispose() }
 }
@@ -65,10 +75,10 @@ function Send-File($cfg, $file, $title, $projectId) {
             -F "audio=@$file;type=video/mp4" -F "external_project_id=$projectId" -F "title=<$tf" "$($cfg.baseUrl)/upload"
         $body = ($out -join "`
 ")
-        Log "ответ сервера: $($body.Substring(0, [Math]::Min(300, $body.Length)))"
-        try { $j = $body | ConvertFrom-Json } catch { throw "загрузка: непонятный ответ сервера: $body" }
-        if ($j.error) { throw "загрузка: $($j.error) $($j.message)" }
-        if (-not $j.shareUrl) { throw "загрузка: нет ссылки в ответе: $body" }
+        Log "server response: $($body.Substring(0, [Math]::Min(300, $body.Length)))"
+        try { $j = $body | ConvertFrom-Json } catch { throw "upload: unexpected server response: $body" }
+        if ($j.error) { throw "upload: $($j.error) $($j.message)" }
+        if (-not $j.shareUrl) { throw "upload: no link in response: $body" }
         return $j
     } finally { Remove-Item $tf -ErrorAction SilentlyContinue }
 }
@@ -92,41 +102,41 @@ function Show-Front($f) {
 # Returns @{ answer = 'send'|'no'; projectId; title }. The window stays until answered.
 function Ask($file, $title, $projects, $err) {
     $f = New-Object Windows.Forms.Form
-    $f.Text = 'Whisperwise: отправить запись?'
+    $f.Text = $T.Title
     $f.TopMost = $true
     $f.StartPosition = 'CenterScreen'
-    $f.ControlBox = $false             # no X: only "Отправить" or "Нет"
+    $f.ControlBox = $false             # no X: only Send or Keep
     $f.FormBorderStyle = 'FixedDialog'
     $f.ClientSize = New-Object Drawing.Size(520, 260)
     $f.Font = New-Object Drawing.Font('Segoe UI', 10)
 
     $mb = (Get-Item -LiteralPath $file).Length / 1MB
     $l1 = New-Object Windows.Forms.Label
-    $l1.Text = ('Запись сжата: {0} ({1:N1} МБ).' -f [IO.Path]::GetFileName($file), $mb)
+    $l1.Text = ($T.Compressed -f [IO.Path]::GetFileName($file), $mb)
     $l1.SetBounds(16, 14, 488, 44)
     $f.Controls.Add($l1)
 
-    $l2 = New-Object Windows.Forms.Label; $l2.Text = 'Проект:'; $l2.SetBounds(16, 66, 80, 24); $f.Controls.Add($l2)
+    $l2 = New-Object Windows.Forms.Label; $l2.Text = $T.Project; $l2.SetBounds(16, 66, 80, 24); $f.Controls.Add($l2)
     $cb = New-Object Windows.Forms.ComboBox
     $cb.DropDownStyle = 'DropDownList'; $cb.SetBounds(100, 62, 404, 28)
     foreach ($p in $projects) { [void]$cb.Items.Add([string]$p.name) }   # parallel to $projects by index
     if ($projects.Count -eq 1) { $cb.SelectedIndex = 0 }
     $f.Controls.Add($cb)
 
-    $l3 = New-Object Windows.Forms.Label; $l3.Text = 'Название:'; $l3.SetBounds(16, 106, 80, 24); $f.Controls.Add($l3)
+    $l3 = New-Object Windows.Forms.Label; $l3.Text = $T.Name; $l3.SetBounds(16, 106, 80, 24); $f.Controls.Add($l3)
     $tb = New-Object Windows.Forms.TextBox; $tb.Text = $title; $tb.SetBounds(100, 102, 404, 28); $f.Controls.Add($tb)
 
     $le = New-Object Windows.Forms.Label
     $le.ForeColor = [Drawing.Color]::Firebrick; $le.Text = $err; $le.SetBounds(16, 140, 488, 50)
     $f.Controls.Add($le)
 
-    $yes = New-Object Windows.Forms.Button; $yes.Text = 'Отправить'; $yes.SetBounds(100, 205, 190, 40)
-    $no  = New-Object Windows.Forms.Button; $no.Text = 'Нет, оставить себе'; $no.SetBounds(310, 205, 194, 40)
+    $yes = New-Object Windows.Forms.Button; $yes.Text = $T.Send; $yes.SetBounds(100, 205, 190, 40)
+    $no  = New-Object Windows.Forms.Button; $no.Text = $T.Keep; $no.SetBounds(310, 205, 194, 40)
     $f.Controls.AddRange(@($yes, $no))
     $res = @{ answer = $null }
     $yes.Add_Click({
         if ($cb.SelectedIndex -ge 0) { $res.answer = 'send'; $f.Close() }
-        else { [void][Windows.Forms.MessageBox]::Show($f, 'Выберите проект.', 'Whisperwise') }
+        else { [void][Windows.Forms.MessageBox]::Show($f, $T.PickProject, 'Whisperwise') }
     })
     $no.Add_Click({ $res.answer = 'no'; $f.Close() })
     $f.Add_Shown({ Show-Front $f; [Media.SystemSounds]::Exclamation.Play() })
@@ -144,28 +154,28 @@ function Ask($file, $title, $projects, $err) {
 try {
     while ($item = Get-ChildItem $PendingDir -Filter *.json | Sort-Object Name | Select-Object -First 1) {
         $job = Get-Content $item.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
-        if (-not (Test-Path -LiteralPath $job.file)) { Log "пропуск, файла нет: $($job.file)"; Remove-Item $item.FullName; continue }
+        if (-not (Test-Path -LiteralPath $job.file)) { Log "skip, file not found: $($job.file)"; Remove-Item $item.FullName; continue }
         $err = ''
         $projects = @()
         $cfg = $null
-        try { $cfg = Read-Config; $projects = Get-Projects $cfg } catch { $err = "Не удалось получить проекты: $($_.Exception.Message)" }
+        try { $cfg = Read-Config; $projects = Get-Projects $cfg } catch { $err = $T.NoProjects + $_.Exception.Message }
         while ($true) {
             $a = Ask $job.file $job.title $projects $err
-            if ($a.answer -eq 'no') { Log "не отправлять (выбор): $($job.file)"; break }
+            if ($a.answer -eq 'no') { Log "declined: $($job.file)"; break }
             if ($err -and -not $projects.Count) {   # config/projects broken: retry fetch instead of failing silently
-                try { $cfg = Read-Config; $projects = Get-Projects $cfg; $err = '' } catch { $err = "Не удалось получить проекты: $($_.Exception.Message)" }
+                try { $cfg = Read-Config; $projects = Get-Projects $cfg; $err = '' } catch { $err = $T.NoProjects + $_.Exception.Message }
                 continue
             }
             try {
                 $r = Send-File $cfg $job.file $a.title $a.projectId
-                Log "отправлено: $($job.file) -> $($r.shareUrl) status=$($r.status) duplicate=$($r.duplicate)"
+                Log "sent: $($job.file) -> $($r.shareUrl) status=$($r.status) duplicate=$($r.duplicate)"
                 $n = New-Object Windows.Forms.NotifyIcon
                 $n.Icon = [Drawing.SystemIcons]::Information; $n.Visible = $true
-                $n.ShowBalloonTip(10000, 'Whisperwise', "Отправлено: $($r.shareUrl)", 'Info'); Start-Sleep 6; $n.Dispose()
+                $n.ShowBalloonTip(10000, 'Whisperwise', ($T.Sent + $r.shareUrl), 'Info'); Start-Sleep 6; $n.Dispose()
                 break
             } catch {
                 $err = $_.Exception.Message
-                Log "ОШИБКА отправки $($job.file): $err"
+                Log "ERROR uploading $($job.file): $err"
             }
         }
         Remove-Item $item.FullName

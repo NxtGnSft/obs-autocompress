@@ -138,7 +138,8 @@ try {
         } catch {
             Log "FAIL  $src : $($_.Exception.Message)"
             Move-Item -LiteralPath $item.FullName -Destination $FailDir -Force
-            Notify 'Сжатие не удалось' "$([IO.Path]::GetFileName($src)): $($_.Exception.Message)"
+            $lang = try { (Get-Content (Join-Path $Root 'whisperwise.config.json') -Raw -Encoding UTF8 | ConvertFrom-Json).lang } catch { $null }
+            Notify $(if ($lang -eq 'ru') { 'Сжатие не удалось' } else { 'Compression failed' }) "$([IO.Path]::GetFileName($src)): $($_.Exception.Message)"
         }
     }
 } finally {
