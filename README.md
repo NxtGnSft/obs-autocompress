@@ -30,7 +30,7 @@
 
 ## Сжать старые записи вручную
 ```powershell
-powershell -ExecutionPolicy Bypass -File "C:\Slava Dev\obs-autocompress\compress.ps1" "C:\Users\Lenovo\Videos\запись1.mp4" "C:\Users\Lenovo\Videos\запись2.mp4"
+powershell -ExecutionPolicy Bypass -File compress.ps1 "$HOME\Videos\запись1.mp4" "$HOME\Videos\запись2.mp4"
 ```
 
 ## Если что-то не так

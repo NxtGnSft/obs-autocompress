@@ -1,7 +1,7 @@
 ﻿# Compresses OBS recordings with HandBrakeCLI.
 # Called by obs-autocompress.lua after a recording stops; the Lua script drops
 # the recording path into queue\ and starts this worker. Can also be run by hand:
-#   powershell -ExecutionPolicy Bypass -File compress.ps1 "C:\Users\Lenovo\Videos\meeting.mp4" ...
+#   powershell -ExecutionPolicy Bypass -File compress.ps1 "$HOME\Videos\meeting.mp4" ...
 param([string[]]$Path)
 
 # ---- settings ----------------------------------------------------------------
