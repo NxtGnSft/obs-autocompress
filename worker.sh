@@ -64,7 +64,7 @@ ask_upload() {
             [[ -z $err ]] && { list=$(projects "$token") && [[ -n $list ]] \
                 || err="Не удалось получить проекты Whisperwise (токен? сеть?)."; }
         fi
-        ans=$(ask "${err:+$err$'\n\n'}Запись: $(basename "$file") ($mb МБ). Отправить в Whisperwise?"$'\n\n'"Название:" "$title")
+        ans=$(ask "${err:+$err$'\n\n'}Запись: $(basename "$file") ($mb МБ). Отправить в Whisperwise? Проект — на следующем шаге."$'\n\n'"Название:" "$title")
         case $ans in
             again) continue ;;
             no) log "не отправлять (выбор): $file"; return ;;
@@ -76,7 +76,7 @@ ask_upload() {
             pid=$(cut -f2 <<<"$list")
         else
             names=(); while IFS=$'\t' read -r name _; do names+=("$name"); done <<<"$list"
-            name=$(choose "Проект для «$title»:" "${names[@]}")
+            name=$(choose "Проект для «${title}»:" "${names[@]}")
             [[ -n $name ]] || continue   # Cancel: back to the first question
             pid=$(awk -F'\t' -v n="$name" '$1 == n { print $2; exit }' <<<"$list")
         fi
